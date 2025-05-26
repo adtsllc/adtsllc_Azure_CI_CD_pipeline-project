@@ -1,0 +1,76 @@
+# # --- Variables ---
+# RESOURCE_GROUP="myVWANResourceGroupCLI"
+# LOCATION="eastus" # Choose an Azure region
+# VWAN_NAME="myVWANCLI"
+# VHUB_NAME="myVWANHubCLI"
+# VHUB_ADDRESS_PREFIX="10.0.0.0/24"
+# VPN_GATEWAY_NAME="myVPNGatewayCLI"
+# VPN_GATEWAY_SCALE_UNITS=1 # 1 for VpnGw1, 2 for VpnGw2, etc.
+# ON_PREM_SITE_NAME="OnPremisesSiteCLI"
+# ON_PREM_PUBLIC_IP="203.0.113.5" # Replace with your on-premises public IP
+# ON_PREM_ADDRESS_PREFIXES="192.168.1.0/24 192.168.2.0/24" # Space-separated list
+# PRE_SHARED_KEY="YourStrongSharedKeyHereCLI" # Use a strong, unique key
+
+# # --- 1. Create Resource Group ---
+# echo "Creating resource group: $RESOURCE_GROUP"
+# az group create --name $RESOURCE_GROUP --location $LOCATION
+
+# # --- 2. Create Virtual WAN ---
+# echo "Creating Virtual WAN: $VWAN_NAME"
+# az network vwan create \
+#     --resource-group $RESOURCE_GROUP \
+#     --name $VWAN_NAME \
+#     --location $LOCATION \
+#     --type Standard
+
+# # --- 3. Create Virtual Hub ---
+# echo "Creating Virtual Hub: $VHUB_NAME"
+# az network vhub create \
+#     --resource-group $RESOURCE_GROUP \
+#     --name $VHUB_NAME \
+#     --location $LOCATION \
+#     --address-prefix $VHUB_ADDRESS_PREFIX \
+#     --vwan $VWAN_NAME
+
+# # --- 4. Create VPN Gateway in the Hub ---
+# echo "Creating VPN Gateway: $VPN_GATEWAY_NAME in $VHUB_NAME"
+# az network vpn-gateway create \
+#     --resource-group $RESOURCE_GROUP \
+#     --name $VPN_GATEWAY_NAME \
+#     --vpn-gateway-scale-unit $VPN_GATEWAY_SCALE_UNITS \
+#     --virtual-hub $VHUB_NAME \
+#     --no-wait # --no-wait allows the command to return immediately while creation happens in background. Remove if you want to wait.
+
+# # Wait for VPN Gateway creation to complete (this might take 30-45 minutes)
+# echo "Waiting for VPN Gateway creation to complete. This can take a while..."
+# az network vpn-gateway show --resource-group $RESOURCE_GROUP --name $VPN_GATEWAY_NAME --query "provisioningState" --output tsv
+
+# # Loop until provisioned
+# while [ "$(az network vpn-gateway show --resource-group $RESOURCE_GROUP --name $VPN_GATEWAY_NAME --query "provisioningState" --output tsv)" != "Succeeded" ]; do
+#     echo "VPN Gateway still provisioning... waiting 60 seconds."
+#     sleep 60
+# done
+# echo "VPN Gateway provisioning succeeded."
+
+
+# # --- 5. Create VPN Site (representing your on-premises location) ---
+# echo "Creating VPN Site: $ON_PREM_SITE_NAME"
+# az network vpn-site create \
+#     --resource-group $RESOURCE_GROUP \
+#     --name $ON_PREM_SITE_NAME \
+#     --location $LOCATION \
+#     --virtual-wan $VWAN_NAME \
+#     --ip-address $ON_PREM_PUBLIC_IP \
+#     --address-space $ON_PREM_ADDRESS_PREFIXES \
+#     --device-model "Generic" \
+#     --device-vendor "Generic"
+
+# # --- 6. Create Site-to-Site VPN Connection ---
+# echo "Creating Site-to-Site VPN Connection from $VPN_GATEWAY_NAME to $ON_PREM_SITE_NAME"
+# az network vpn-connection create \
+#     --resource-group $RESOURCE_GROUP \
+#     --name "${ON_PREM_SITE_NAME}-Connection" \
+#     --vpn-gateway $VPN_GATEWAY_NAME \
+#     --remote-vpn-site $ON_PREM_SITE_NAME \
+#     --shared-key $PRE_SHARED_KEY \
+#     --connection-mode Default # Other options: Initiator, Responder

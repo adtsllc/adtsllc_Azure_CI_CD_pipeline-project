@@ -1,0 +1,179 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "resourceGroupName": {
+      "type": "string",
+      "defaultValue": "myVWANResourceGroup",
+      "metadata": {
+        "description": "Name of the resource group."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Location for all resources."
+      }
+    },
+    "vwanName": {
+      "type": "string",
+      "defaultValue": "myVWAN",
+      "metadata": {
+        "description": "Name of the Virtual WAN."
+      }
+    },
+    "vhubName": {
+      "type": "string",
+      "defaultValue": "myVWANHub",
+      "metadata": {
+        "description": "Name of the Virtual Hub."
+      }
+    },
+    "vhubAddressPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.0.0/24",
+      "metadata": {
+        "description": "Address prefix for the Virtual Hub."
+      }
+    },
+    "vpnGatewayName": {
+      "type": "string",
+      "defaultValue": "myVPNGateway",
+      "metadata": {
+        "description": "Name of the VPN Gateway within the hub."
+      }
+    },
+    "vpnGatewayScaleUnits": {
+      "type": "int",
+      "defaultValue": 1,
+      "metadata": {
+        "description": "Number of scale units for the VPN Gateway (e.g., 1 for VpnGw1, 2 for VpnGw2)."
+      }
+    },
+    "onPremisesSiteName": {
+      "type": "string",
+      "defaultValue": "OnPremisesSite",
+      "metadata": {
+        "description": "Name for the on-premises VPN site."
+      }
+    },
+    "onPremisesPublicIP": {
+      "type": "string",
+      "defaultValue": "203.0.113.5",
+      "metadata": {
+        "description": "Public IP address of your on-premises VPN device."
+      }
+    },
+    "onPremisesAddressPrefixes": {
+      "type": "array",
+      "defaultValue": ["192.168.1.0/24", "192.168.2.0/24"],
+      "metadata": {
+        "description": "Array of address prefixes for your on-premises network."
+      }
+    },
+    "preSharedKey": {
+      "type": "string",
+      "defaultValue": "YourStrongSharedKeyHere",
+      "metadata": {
+        "description": "Pre-shared key for the Site-to-Site VPN connection."
+      }
+    }
+  },
+  "variables": {
+    "vwanId": "[resourceId('Microsoft.Network/virtualWans', parameters('vwanName'))]",
+    "vhubId": "[resourceId('Microsoft.Network/virtualHubs', parameters('vhubName'))]",
+    "vpnGatewayId": "[resourceId('Microsoft.Network/vpnGateways', parameters('vpnGatewayName'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Network/virtualWans",
+      "apiVersion": "2023-11-01",
+      "name": "[parameters('vwanName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "allowVnetToVnetTraffic": true,
+        "disableVpnEncryption": false,
+        "type": "Standard"
+      }
+    },
+    {
+      "type": "Microsoft.Network/virtualHubs",
+      "apiVersion": "2023-11-01",
+      "name": "[parameters('vhubName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "virtualWan": {
+          "id": "[variables('vwanId')]"
+        },
+        "addressPrefix": "[parameters('vhubAddressPrefix')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/virtualWans', parameters('vwanName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Network/vpnGateways",
+      "apiVersion": "2023-11-01",
+      "name": "[parameters('vpnGatewayName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "virtualHub": {
+          "id": "[variables('vhubId')]"
+        },
+        "vpnGatewayScaleUnit": "[parameters('vpnGatewayScaleUnits')]",
+        "ipConfigurations": []
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/virtualHubs', parameters('vhubName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Network/vpnSites",
+      "apiVersion": "2023-11-01",
+      "name": "[parameters('onPremisesSiteName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "virtualWan": {
+          "id": "[variables('vwanId')]"
+        },
+        "ipAddress": "[parameters('onPremisesPublicIP')]",
+        "addressSpace": {
+          "addressPrefixes": "[parameters('onPremisesAddressPrefixes')]"
+        },
+        "is=SiteToSiteNetworkArchitecture": "Basic"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/virtualWans', parameters('vwanName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Network/vpnGateways/vpnConnections",
+      "apiVersion": "2023-11-01",
+      "name": "[concat(parameters('vpnGatewayName'), '/', parameters('onPremisesSiteName'), '-Connection')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "remoteVpnSite": {
+          "id": "[resourceId('Microsoft.Network/vpnSites', parameters('onPremisesSiteName'))]"
+        },
+        "sharedKey": "[parameters('preSharedKey')]",
+        "enableBgp": false,
+        "routingWeight": 0,
+        "connectionMode": "Default",
+        "vpnLinkConnections": [
+          {
+            "name": "link1",
+            "vpnConnectionProtocolType": "IKEv2",
+            "vpnLinkConnectionMode": "Default",
+            "connectionBandwidth": 100,
+            "ipsecPolicies": []
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/vpnSites', parameters('onPremisesSiteName'))]",
+        "[resourceId('Microsoft.Network/vpnGateways', parameters('vpnGatewayName'))]"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+# --- Variables ---
+$resourceGroupName = "myVWANResourceGroupPS"
+$location = "eastus" # Choose an Azure region
+$vwanName = "myVWANPS"
+$vhubName = "myVWANHubPS"
+$vhubAddressPrefix = "10.0.0.0/24"
+$vpnGatewayName = "myVPNGatewayPS"
+$vpnGatewayScaleUnits = 1 # 1 for VpnGw1, 2 for VpnGw2, etc.
+$onPremisesSiteName = "OnPremisesSitePS"
+$onPremisesPublicIP = "203.0.113.5" # Replace with your on-premises public IP
+$onPremisesAddressPrefixes = "192.168.1.0/24", "192.168.2.0/24" # Comma-separated list
+$preSharedKey = "YourStrongSharedKeyHerePS" # Use a strong, unique key
+
+# --- 1. Create Resource Group ---
+Write-Host "Creating resource group: $resourceGroupName"
+New-AzResourceGroup -Name $resourceGroupName -Location $location
+
+# --- 2. Create Virtual WAN ---
+Write-Host "Creating Virtual WAN: $vwanName"
+$vwan = New-AzVwan -ResourceGroupName $resourceGroupName -Name $vwanName -Location $location -Type Standard -AllowVnetToVnetTraffic
+
+# --- 3. Create Virtual Hub ---
+Write-Host "Creating Virtual Hub: $vhubName"
+$vhub = New-AzVHub -ResourceGroupName $resourceGroupName -Name $vhubName -Location $location -AddressPrefix $vhubAddressPrefix -VirtualWan $vwan
+
+# --- 4. Create VPN Gateway in the Hub ---
+Write-Host "Creating VPN Gateway: $vpnGatewayName in $($vhub.Name)"
+# This command starts the creation and might take a long time to complete.
+$vpnGateway = New-AzVpnGateway -ResourceGroupName $resourceGroupName -Name $vpnGatewayName -VirtualHubId $vhub.Id -VpnGatewayScaleUnit $vpnGatewayScaleUnits
+
+# Optional: Wait for VPN Gateway provisioning to complete
+Write-Host "Waiting for VPN Gateway creation to complete. This can take a while..."
+$status = ""
+while ($status -ne "Succeeded") {
+    Start-Sleep -Seconds 60 # Wait for 60 seconds before checking again
+    $currentGateway = Get-AzVpnGateway -ResourceGroupName $resourceGroupName -Name $vpnGatewayName
+    $status = $currentGateway.ProvisioningState
+    Write-Host "VPN Gateway provisioning state: $status"
+}
+Write-Host "VPN Gateway provisioning succeeded."
+
+# --- 5. Create VPN Site (representing your on-premises location) ---
+Write-Host "Creating VPN Site: $onPremisesSiteName"
+$vpnSite = New-AzVpnSite -ResourceGroupName $resourceGroupName -Name $onPremisesSiteName -Location $location -VirtualWan $vwan -IpAddress $onPremisesPublicIP -AddressSpace $onPremisesAddressPrefixes -DeviceVendor "Generic" -DeviceModel "Generic"
+
+# --- 6. Create Site-to-Site VPN Connection ---
+Write-Host "Creating Site-to-Site VPN Connection from $($vpnGateway.Name) to $($vpnSite.Name)"
+New-AzVpnConnection -ResourceGroupName $resourceGroupName -Name "$($onPremisesSiteName)-Connection" -VpnGatewayId $vpnGateway.Id -RemoteVpnSiteId $vpnSite.Id -SharedKey $preSharedKey -ConnectionMode Default
